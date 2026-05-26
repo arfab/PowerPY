@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guía Definitiva de Git y GitHub Flow — PowerPY</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* variables & Reset */
+    :root {
+      --bg-main: #0b0f19;
+      --bg-card: rgba(22, 28, 45, 0.6);
+      --bg-card-hover: rgba(30, 37, 59, 0.8);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(99, 102, 241, 0.5);
+      
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      
+      --color-primary: #8b5cf6;
+      --color-secondary: #3b82f6;
+      --color-accent: #06b6d4;
+      --color-success: #10b981;
+      --color-warning: #f59e0b;
+      --color-danger: #ef4444;
+
+      --grad-primary: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+      --grad-accent: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+      --grad-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+
+      --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.15) 0px, transparent 50%);
+      background-attachment: fixed;
+      padding-bottom: 5rem;
+    }
+
+    /* Container & Typography */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3.5rem;
+      padding: 3rem 1.5rem;
+      background: rgba(22, 28, 45, 0.3);
+      border-radius: 24px;
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--grad-primary);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.35rem 1rem;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c084fc;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+      background: var(--grad-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Tabs Navigation */
+    .tabs-nav {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 3rem;
+      background: rgba(22, 28, 45, 0.4);
+      padding: 0.5rem;
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(8px);
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: var(--grad-primary);
+      box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.3);
+    }
+
+    /* Tab Content structure */
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Card Designs */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+      transition: transform 0.3s ease, border-color 0.3s ease;
+      position: relative;
+    }
+
+    .card:hover {
+      border-color: rgba(139, 92, 246, 0.3);
+      background: var(--bg-card-hover);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 1rem;
+    }
+
+    .step-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: var(--grad-primary);
+      color: white;
+      font-weight: 700;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
+    }
+
+    .card h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .card p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* Code Blocks */
+    .code-container {
+      position: relative;
+      margin: 1.25rem 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #080c14;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f1524;
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      color: #6b7280;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-family: var(--font-mono);
+    }
+
+    .code-header span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .code-header span::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-accent);
+    }
+
+    pre {
+      padding: 1.25rem;
+      overflow-x: auto;
+      margin: 0;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: #e2e8f0;
+      white-space: pre;
+    }
+
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-copy:hover {
+      background: var(--color-primary);
+      color: white;
+      border-color: var(--color-primary);
+    }
+
+    .btn-copy.copied {
+      background: var(--color-success);
+      color: white;
+      border-color: var(--color-success);
+    }
+
+    /* Informational Alerts */
+    .alert {
+      display: flex;
+      gap: 1rem;
+      padding: 1.25rem;
+      border-radius: 12px;
+      margin: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+
+    .alert-info {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+    }
+
+    .alert-warning {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      color: #fcd34d;
+    }
+
+    .alert-icon {
+      font-size: 1.3rem;
+      line-height: 1;
+    }
+
+    /* Grid Layout for Flowchart or Cards */
+    .flow-steps {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (min-width: 768px) {
+      .flow-steps {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    /* Tips section styling */
+    .tip-card {
+      border-left: 4px solid var(--color-accent);
+    }
+
+    .troubleshoot-card {
+      border-left: 4px solid var(--color-danger);
+    }
+
+    .success-card {
+      border-left: 4px solid var(--color-success);
+    }
+
+    /* Inline highlight */
+    .highlight {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: #f472b6;
+    }
+
+    /* Footer styling */
+    footer {
+      text-align: center;
+      margin-top: 4rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 2rem;
+    }
+
+    footer a {
+      color: var(--color-accent);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="badge">Cheat Sheet Local</div>
+      <h1>PowerPY — Guía Git & GitHub Flow</h1>
+      <p class="subtitle">Manual de referencia rápido para mantener tu código seguro en la nube y trabajar de forma profesional usando GitHub Flow.</p>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('inicial')">
+        <span>🚀</span> Configuración Inicial
+      </button>
+      <button class="tab-btn" onclick="switchTab('flow')">
+        <span>🔄</span> GitHub Flow Diario
+      </button>
+      <button class="tab-btn" onclick="switchTab('tips')">
+        <span>🛠️</span> Solución de Errores
+      </button>
+    </div>
+
+    <!-- TAB 1: INITIAL SETUP -->
+    <div id="tab-inicial" class="tab-content active">
+      
+      <div class="card success-card">
+        <div class="card-header">
+          <span class="step-number">✓</span>
+          <h2>¡Proyecto Subido Exitosamente!</h2>
+        </div>
+        <p>Tu proyecto ya está alojado de forma segura en <span class="highlight">https://github.com/arfab/PowerPY</span>. A modo de referencia histórica, aquí están los pasos que ejecutamos para subirlo por primera vez:</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="step-number">1</span>
+          <h2>Inicializar Repositorio Local</h2>
+        </div>
+        <p>Crea la base de datos de historial de Git en tu carpeta local.</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git init</code></pre>
+        </div>
+        <div class="alert alert-info">
+          <span class="alert-icon">💡</span>
+          <div>
+            <strong>Nota:</strong> En este paso, Git comienza a trackear tu proyecto y respeta las reglas configuradas en el archivo <span class="highlight">.gitignore</span> para omitir archivos innecesarios o confidenciales.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="step-number">2</span>
+          <h2>Guardar Cambios Localmente (Commit)</h2>
+        </div>
+        <p>Agrega todos los archivos válidos al "Stage" y confirma tu primer punto de restauración con un commit descriptivo.</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git add .
+git commit -m "Initial commit: Estructura base del proyecto PowerPY"</code></pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="step-number">3</span>
+          <h2>Configurar Rama y Vincular Servidor</h2>
+        </div>
+        <p>Renombra la rama principal a <span class="highlight">main</span> y establece la conexión con tu repositorio remoto de GitHub.</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code># Cambiar nombre de rama predeterminada a main
+git branch -M main
+
+# Vincular con GitHub
+git remote add origin https://github.com/arfab/PowerPY.git</code></pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="step-number">4</span>
+          <h2>Subir Código a la Nube</h2>
+        </div>
+        <p>Envía la rama <span class="highlight">main</span> de tu computadora local a GitHub.</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git push -u origin main</code></pre>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB 2: GITHUB FLOW DIARIO -->
+    <div id="tab-flow" class="tab-content">
+      
+      <div class="card tip-card">
+        <div class="card-header">
+          <span class="step-number">!</span>
+          <h2>Regla de Oro de GitHub Flow</h2>
+        </div>
+        <p><strong>NUNCA programes directamente sobre la rama <span class="highlight">main</span>.</strong> Todo cambio nuevo debe nacer en una rama secundaria, ser revisado en un Pull Request y luego fusionarse de vuelta en <span class="highlight">main</span>.</p>
+      </div>
+
+      <div class="flow-steps">
+        
+        <div class="card">
+          <div class="card-header">
+            <span class="step-number">1</span>
+            <h2>Crear una Rama Nueva</h2>
+          </div>
+          <p>Asegúrate de tener la última versión de <code>main</code> y crea una rama descriptiva.</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>PowerShell</span>
+              <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+            </div>
+            <pre><code># Ir a main
+git checkout main
+
+# Descargar últimas actualizaciones
+git pull origin main
+
+# Crear y cambiarse a la nueva rama
+git checkout -b feature/nombre-de-tu-mejora</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="step-number">2</span>
+            <h2>Hacer Cambios Locales</h2>
+          </div>
+          <p>Escribe tu código. Haz commits breves y atómicos conforme resuelvas cada parte.</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>PowerShell</span>
+              <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+            </div>
+            <pre><code># Ver qué archivos modificaste
+git status
+
+# Preparar y guardar cambios
+git add .
+git commit -m "Implementa funcionalidad X en app.py"</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="step-number">3</span>
+            <h2>Subir la Rama a GitHub</h2>
+          </div>
+          <p>Sube tu rama al servidor remoto para poder visualizarla en GitHub.</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>PowerShell</span>
+              <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+            </div>
+            <pre><code>git push -u origin feature/nombre-de-tu-mejora</code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="step-number">4</span>
+            <h2>Crear un Pull Request</h2>
+          </div>
+          <p>Ve a <a href="https://github.com/arfab/PowerPY" target="_blank">tu GitHub</a>, haz clic en el banner amarillo <strong>"Compare & Pull Request"</strong>, detalla lo que has hecho y crea la solicitud de fusión.</p>
+          <div class="alert alert-info" style="margin: 0.5rem 0 0 0; padding: 0.75rem;">
+            <span class="alert-icon">⚡</span>
+            <div style="font-size: 0.85rem;">
+              Esto permite revisar el código antes de integrarlo permanentemente.
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <span class="step-number">5</span>
+            <h2>Merge (Fusión) y Limpieza</h2>
+          </div>
+          <p>Una vez aprobado en la web, haz clic en **"Merge Pull Request"** en GitHub. Luego, limpia tus ramas en local:</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>PowerShell</span>
+              <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+            </div>
+            <pre><code># Vuelve a tu main local
+git checkout main
+
+# Descarga los cambios fusionados desde GitHub
+git pull origin main
+
+# Elimina la rama local que ya no necesitas
+git branch -d feature/nombre-de-tu-mejora</code></pre>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TAB 3: SOLUTIONS / TROUBLESHOOTING -->
+    <div id="tab-tips" class="tab-content">
+      
+      <div class="card troubleshoot-card">
+        <div class="card-header">
+          <span class="step-number">⚠️</span>
+          <h2>Error: "Remote origin already exists"</h2>
+        </div>
+        <p>Este es el error que te ocurrió al intentar definir de nuevo tu servidor. Sucede porque la variable <code>origin</code> ya está asignada a otra URL.</p>
+        
+        <p><strong>Solución Directa (Modificar):</strong></p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git remote set-url origin https://github.com/arfab/PowerPY.git</code></pre>
+        </div>
+
+        <p><strong>Solución Alternativa (Borrar y Agregar):</strong></p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git remote remove origin
+git remote add origin https://github.com/arfab/PowerPY.git</code></pre>
+        </div>
+      </div>
+
+      <div class="card tip-card">
+        <div class="card-header">
+          <span class="step-number">💡</span>
+          <h2>Cómo revertir un commit incorrecto localmente</h2>
+        </div>
+        <p>Si hiciste un commit pero olvidaste agregar algo o te equivocaste en el mensaje del commit:</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code># Deshacer el último commit guardando tus archivos modificados intactos
+git reset --soft HEAD~1</code></pre>
+        </div>
+      </div>
+
+      <div class="card tip-card">
+        <div class="card-header">
+          <span class="step-number">💡</span>
+          <h2>Verificar el estado de tus remotos</h2>
+        </div>
+        <p>Para asegurarte de a dónde se enviará tu código con exactitud:</p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>PowerShell</span>
+            <button class="btn-copy" onclick="copyCode(this)">Copiar</button>
+          </div>
+          <pre><code>git remote -v</code></pre>
+        </div>
+      </div>
+
+    </div>
+
+    <footer>
+      Desarrollado para el proyecto <strong>PowerPY</strong> — Montagne &copy; 2026.
+      <br>
+      Abre este archivo local en tu navegador favorito en cualquier momento para consultarlo.
+    </footer>
+  </div>
+
+  <script>
+    // Tab switching logic
+    function switchTab(tabId) {
+      // Hide all tabs
+      const tabs = document.querySelectorAll('.tab-content');
+      tabs.forEach(tab => tab.classList.remove('active'));
+
+      // Remove active class from buttons
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+
+      // Show current tab & set active button
+      document.getElementById('tab-' + tabId).classList.add('active');
+      
+      // Find the button clicked and activate it
+      const eventTarget = window.event.currentTarget;
+      if (eventTarget) {
+        eventTarget.classList.add('active');
+      }
+    }
+
+    // Modern Copy to Clipboard logic
+    function copyCode(button) {
+      const codeBlock = button.parentElement.nextElementSibling.querySelector('code');
+      const textToCopy = codeBlock.innerText;
+
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        button.innerText = '¡Copiado!';
+        button.classList.add('copied');
+
+        setTimeout(() => {
+          button.innerText = 'Copiar';
+          button.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        console.error('Error al copiar el texto: ', err);
+      });
+    }
+  </script>
+</body>
+</html>
