@@ -1,0 +1,10 @@
+{
+  "DB_TYPE": "sqlserver",
+  "SERVER": "localhost\\SQLEXPRESS",
+  "DATABASE": "MontagneAdministracionTest",
+  "USERNAME": "",
+  "PASSWORD": "",
+  "TRUSTED_CONNECTION": "yes",
+  "DRIVER": "ODBC Driver 17 for SQL Server",
+  "PORT": "1433"
+}
