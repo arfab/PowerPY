@@ -150,11 +150,13 @@ def build_rolap_query(metric_name, dimensions_list, filters=None):
             
         if "order_by" in dim_info:
             order_by_fields.append(dim_info["order_by"])
+            # Para compatibilidad con SQL Server, cualquier columna en ORDER BY debe estar en GROUP BY si hay agregación
+            if dim_info["order_by"] not in groupby_fields:
+                groupby_fields.append(dim_info["order_by"])
         else:
             order_by_fields.append(col)
 
     # Procesar Métrica
-    agg_expr = metric_info["agg"]
     select_fields.append(f"{agg_expr} AS [{metric_name}]")
 
     # Procesar Filtros (WHERE)
@@ -166,9 +168,9 @@ def build_rolap_query(metric_name, dimensions_list, filters=None):
             if not values:
                 continue
                 
-            # Convertir valores de filtro a enteros para columnas numéricas de hechos (Año, Mes, Local)
+            # Convertir valores de filtro a enteros para columnas numéricas de hechos (Año, Mes, Local, Vendedor)
             # Esto evita fallos de tipo (int vs string) en SQLite y SQL Server
-            if friendly_filter_name in ["Año", "Mes", "Local"]:
+            if friendly_filter_name in ["Año", "Mes", "Local", "Vendedor"]:
                 try:
                     if isinstance(values, list):
                         values = [int(v) for v in values]
@@ -177,18 +179,14 @@ def build_rolap_query(metric_name, dimensions_list, filters=None):
                 except (ValueError, TypeError):
                     pass
                 
-            # Mapear nombre amigable a columna SQL
+            # Mapear nombre amigable a columna SQL de forma dinámica
             col_filter = None
-            if friendly_filter_name == "Año":
-                col_filter = "f.anio"
-            elif friendly_filter_name == "Mes":
-                col_filter = "f.mes"
-            elif friendly_filter_name == "Región":
-                col_filter = "f.region"
-            elif friendly_filter_name == "Rubro" and table_name == "factProductos":
-                col_filter = "f.rubro"
-            elif friendly_filter_name == "Local":
-                col_filter = "f.empresa"
+            dim_info = DIMENSIONS_MAP.get(friendly_filter_name)
+            if dim_info:
+                # Si es una dimensión exclusiva de producto, sólo se filtra si la tabla es factProductos
+                if dim_info.get("product_only", False) and table_name != "factProductos":
+                    continue
+                col_filter = dim_info.get("key_column") or dim_info.get("column")
                 
             if col_filter:
                 if isinstance(values, list):
