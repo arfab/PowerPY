@@ -83,15 +83,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def update_page_index_callback(page_dim, page_codes, suffix):
-    key_widget = f"widget_{page_dim}_{suffix}"
+def update_page_index_callback(page_dim, page_codes):
+    key_widget = f"widget_{page_dim}"
     key_idx = f"index_{page_dim}"
     if key_widget in st.session_state:
         selected_val = st.session_state[key_widget]
         if selected_val in page_codes:
             st.session_state[key_idx] = page_codes.index(selected_val)
 
-def render_page_navigator(selected_pages, suffix):
+def render_page_navigator(selected_pages):
     if not selected_pages:
         return {}
     
@@ -107,37 +107,38 @@ def render_page_navigator(selected_pages, suffix):
                 page_codes = [d["val"] for d in page_vals]
                 page_labels = {d["val"]: d["desc"] for d in page_vals}
                 
-                key_widget = f"widget_{page_dim}_{suffix}"
+                key_widget = f"widget_{page_dim}"
                 key_idx = f"index_{page_dim}"
                 
                 if key_idx not in st.session_state:
                     st.session_state[key_idx] = 0
-                
-                # Sincronización bidireccional desde la sesión
-                if key_widget in st.session_state:
-                    current_val = st.session_state[key_widget]
-                    if current_val in page_codes:
-                        st.session_state[key_idx] = page_codes.index(current_val)
                 
                 idx_val = st.session_state[key_idx]
                 if idx_val < 0 or idx_val >= len(page_codes):
                     idx_val = 0
                     st.session_state[key_idx] = 0
                 
+                if key_widget not in st.session_state or st.session_state[key_widget] not in page_codes:
+                    st.session_state[key_widget] = page_codes[idx_val]
+                
                 col_prev, col_select, col_next = st.columns([1, 10, 1])
                 
                 with col_prev:
                     st.write("")
                     st.write("")
-                    if st.button("◀", key=f"prev_{page_dim}_{suffix}", help=f"Ver {page_dim} anterior"):
-                        st.session_state[key_idx] = (idx_val - 1) % len(page_codes)
+                    if st.button("◀", key=f"prev_{page_dim}", help=f"Ver {page_dim} anterior"):
+                        new_idx = (idx_val - 1) % len(page_codes)
+                        st.session_state[key_idx] = new_idx
+                        st.session_state[key_widget] = page_codes[new_idx]
                         st.rerun()
                         
                 with col_next:
                     st.write("")
                     st.write("")
-                    if st.button("▶", key=f"next_{page_dim}_{suffix}", help=f"Ver {page_dim} siguiente"):
-                        st.session_state[key_idx] = (idx_val + 1) % len(page_codes)
+                    if st.button("▶", key=f"next_{page_dim}", help=f"Ver {page_dim} siguiente"):
+                        new_idx = (idx_val + 1) % len(page_codes)
+                        st.session_state[key_idx] = new_idx
+                        st.session_state[key_widget] = page_codes[new_idx]
                         st.rerun()
                         
                 with col_select:
@@ -148,7 +149,7 @@ def render_page_navigator(selected_pages, suffix):
                         format_func=lambda x: page_labels.get(x, str(x)),
                         key=key_widget,
                         on_change=update_page_index_callback,
-                        args=(page_dim, page_codes, suffix)
+                        args=(page_dim, page_codes)
                     )
                     active_filters[page_dim] = [selected_val]
     return active_filters
@@ -279,27 +280,21 @@ with st.container(border=True):
             help="Dimensiones que formarán los encabezados de las columnas."
         )
 
-# 4.2. SILENT RESOLUTION OF OLAP PAGE FILTERS (Antes del Query Execution)
-# Obtenemos los valores activos del estado para enviarlos a la base de datos sin renderizar UI aún
-active_page_filters = {}
-for page_dim in selected_pages:
-    page_vals = get_dimension_values(page_dim)
-    if page_vals:
-        page_codes = [d["val"] for d in page_vals]
-        key_idx = f"index_{page_dim}"
-        
-        if key_idx not in st.session_state:
-            st.session_state[key_idx] = 0
-            
-        idx_val = st.session_state[key_idx]
-        if idx_val < 0 or idx_val >= len(page_codes):
-            idx_val = 0
-            st.session_state[key_idx] = 0
-            
-        active_page_filters[page_dim] = [page_codes[idx_val]]
+# 4.2. RESOLUCIÓN Y RENDERIZACIÓN DE NAVEGADORES DE PÁGINAS OLAP
+# Renderizar el navegador de páginas OLAP arriba (fuera de las pestañas) y obtener los filtros activos
+active_page_filters = render_page_navigator(selected_pages)
 
 # Combinar filtros generales de barra lateral con los filtros de página OLAP activos
 combined_filters = {**active_filters, **active_page_filters}
+
+# Log de depuración temporal
+try:
+    with open("debug_run.log", "w", encoding="utf-8") as f_dbg:
+        f_dbg.write(f"selected_pages: {selected_pages}\n")
+        f_dbg.write(f"active_page_filters: {active_page_filters}\n")
+        f_dbg.write(f"combined_filters: {combined_filters}\n")
+except Exception:
+    pass
 
 # 4.3. PROCESAR MULTI-FACT TABLE Y BLENDING (ROLAP CUBE ENGINE)
 # La unión de todas las dimensiones necesarias en la consulta SQL es: filas + columnas + páginas
@@ -381,9 +376,6 @@ tab_pivot, tab_visual, tab_sql, tab_config = st.tabs([
 
 # --- TAB 1: TABLA DINAMICA PIVOT ---
 with tab_pivot:
-    # Renderizar el navegador de páginas OLAP justo aquí (inmediatamente arriba de la tabla!)
-    render_page_navigator(selected_pages, suffix="pivot")
-    
     if merged_df is None or merged_df.empty:
         st.warning("⚠️ No se encontraron datos para la combinación seleccionada. Intenta remover filtros o simplificar el cubo.")
         if query_errors:
@@ -462,9 +454,6 @@ with tab_pivot:
 
 # --- TAB 2: GRAFICO DINAMICO ---
 with tab_visual:
-    # Renderizar el navegador de páginas OLAP justo aquí (inmediatamente arriba del gráfico!)
-    render_page_navigator(selected_pages, suffix="visual")
-    
     if merged_df is None or merged_df.empty:
         st.warning("⚠️ No hay datos para graficar.")
     else:
