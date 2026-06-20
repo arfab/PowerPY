@@ -10,7 +10,8 @@ DIMENSIONS_MAP = {
         "key_column": "f.mes",
         "label": "Mes",
         "joins": ["LEFT JOIN dimMeses m ON f.mes = m.codigo"],
-        "order_by": "f.mes"
+        "order_by": "f.mes",
+        "sort_by_id": True
     },
     "Región": {
         "column": "f.region",

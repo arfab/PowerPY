@@ -13,6 +13,251 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 1.1. CONFIGURACIÓN DE JERARQUÍAS Y ESTADO OLAP (Estilo MetaCube)
+HIERARCHIES = {
+    "Región": "Local",
+    "Local": "Vendedor",
+    "Año": "Mes",
+    "Rubro": "Subrubro",
+    "Subrubro": "Producto Genérico",
+    "Producto Genérico": "Código Alfa"
+}
+
+def resolve_filter_value(dim_name, desc_val):
+    """Mapea una descripción (ej: 'Local 101') al valor/código real de la base de datos (ej: 101)."""
+    dim_vals = get_dimension_values(dim_name)
+    for d in dim_vals:
+        if str(d["desc"]) == str(desc_val) or str(d["val"]) == str(desc_val):
+            return d["val"]
+    return desc_val
+
+def render_example_report(row_dims, col_dims, metrics):
+    st.markdown('<div class="box-title">📄 Vista Previa de Estructura (Example Report)</div>', unsafe_allow_html=True)
+    st.caption("Esta es una simulación visual y estructural de la tabla resultante basada en tus selecciones actuales. No consulta datos reales.")
+    
+    if not row_dims:
+        row_dims = ["Región"]
+    if not metrics:
+        metrics = ["Facturación ($)"]
+        
+    dummy_rows = []
+    for i in range(2):
+        row_val = {}
+        for rd in row_dims:
+            row_val[rd] = f"Ejemplo {rd} {i+1}"
+            
+        if col_dims:
+            for col_val in ["Columna A", "Columna B"]:
+                for m in metrics:
+                    col_header = f"{col_val} ({col_dims[0]}) | {m}"
+                    row_val[col_header] = "$ 1,234.00" if "($)" in m else "150"
+        else:
+            for m in metrics:
+                row_val[m] = "$ 1,234.00" if "($)" in m else "150"
+        dummy_rows.append(row_val)
+        
+    df_preview = pd.DataFrame(dummy_rows)
+    df_preview.set_index(row_dims, inplace=True)
+    st.dataframe(df_preview, use_container_width=True)
+
+def extract_dimension_value_from_column_string(dim_name, column_str):
+    """Obtiene el valor real de una dimensión a partir de un string de columna."""
+    dim_vals = get_dimension_values(dim_name)
+    for d in dim_vals:
+        if str(d["desc"]) in column_str or str(d["val"]) in column_str:
+            return d["desc"], d["val"]
+    return None, None
+
+def drill_down_callback(drill_dim, real_val, next_dim, selected_vals, target_axis="rows"):
+    # 1. Aplicar el filtro para el nivel seleccionado
+    st.session_state[f"filter_{drill_dim}"] = [real_val]
+    # Aplicar los filtros para los demás niveles ancestros seleccionados
+    for k, v in selected_vals.items():
+        if k != drill_dim:
+            st.session_state[f"filter_{k}"] = [resolve_filter_value(k, v)]
+            
+    # 2. Reemplazar la dimensión padre con el hijo en filas o columnas para hacer zoom
+    axis_key = "sel_rows" if target_axis == "rows" else "sel_cols"
+    dims = st.session_state.get(axis_key, [])
+    new_dims = [next_dim if d == drill_dim else d for d in dims]
+    if next_dim not in new_dims:
+        new_dims.append(next_dim)
+    st.session_state[axis_key] = new_dims
+    
+    # 3. Incrementar contador de consulta para cambiar el key de st.dataframe y limpiar la selección visual
+    st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+
+def drill_up_callback(drill_up_dim, parent_dim, target_axis="rows"):
+    # 1. Reemplazar la dimensión hijo por su padre
+    axis_key = "sel_rows" if target_axis == "rows" else "sel_cols"
+    dims = st.session_state.get(axis_key, [])
+    new_dims = [parent_dim if d == drill_up_dim else d for d in dims]
+    st.session_state[axis_key] = new_dims
+    
+    # 2. Limpiar filtros del padre y del hijo
+    st.session_state[f"filter_{parent_dim}"] = []
+    st.session_state[f"filter_{drill_up_dim}"] = []
+    
+    # 3. Incrementar contador de consulta para limpiar la selección visual
+    st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+
+def move_dim_to(dim, target):
+    # Remover la dimensión de todos los ejes actuales
+    for axis in ["sel_rows", "sel_cols", "sel_pages"]:
+        if dim in st.session_state[axis]:
+            st.session_state[axis].remove(dim)
+    # Asignar al nuevo eje
+    if target == "rows":
+        st.session_state["sel_rows"].append(dim)
+    elif target == "cols":
+        st.session_state["sel_cols"].append(dim)
+    elif target == "pages":
+        st.session_state["sel_pages"].append(dim)
+    # Incrementar el contador de consultas para refrescar
+    st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+
+@st.dialog("Configurar Dimensión")
+def show_dim_config_dialog(dim):
+    st.write(f"¿Dónde deseas ubicar la dimensión **{dim}** en el reporte?")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("⬇️ Filas", key=f"dlg_row_{dim}", use_container_width=True):
+            move_dim_to(dim, "rows")
+            st.rerun()
+    with col2:
+        if st.button("➡️ Columnas", key=f"dlg_col_{dim}", use_container_width=True):
+            move_dim_to(dim, "cols")
+            st.rerun()
+    with col3:
+        if st.button("📄 Páginas", key=f"dlg_page_{dim}", use_container_width=True):
+            move_dim_to(dim, "pages")
+            st.rerun()
+    with col4:
+        if st.button("❌ Quitar", key=f"dlg_remove_{dim}", use_container_width=True):
+            move_dim_to(dim, "remove")
+            st.rerun()
+
+@st.dialog("Acciones OLAP de Celda")
+def show_olap_actions_dialog(selected_row_vals, selected_col_vals, pivot_rows, pivot_cols):
+    st.write("Selecciona una acción para profundizar o resumir la vista actual:")
+    
+    col_panel_rows, col_panel_cols = st.columns(2)
+    
+    with col_panel_rows:
+        st.markdown("##### Acciones sobre Filas")
+        if selected_row_vals:
+            sel_desc = ", ".join([f"**{k}**: {v}" for k, v in selected_row_vals.items()])
+            st.write(f"Fila activa: {sel_desc}")
+            
+            drill_dim = None
+            for d in reversed(pivot_rows):
+                if d in selected_row_vals and d in HIERARCHIES:
+                    drill_dim = d
+                    break
+                    
+            if drill_dim:
+                next_dim = HIERARCHIES[drill_dim]
+                real_val = resolve_filter_value(drill_dim, selected_row_vals[drill_dim])
+                if st.button(f"⏬ Drill Down Filas (A {next_dim})", type="primary", key="btn_drill_down_rows_dlg"):
+                    drill_down_callback(drill_dim, real_val, next_dim, selected_row_vals, "rows")
+                    st.session_state["last_selection"] = {}
+                    st.rerun()
+            else:
+                st.caption("No hay más niveles de fila.")
+                
+            drill_up_dim = None
+            for d in pivot_rows:
+                for parent, child in HIERARCHIES.items():
+                    if child == d:
+                        drill_up_dim = d
+                        parent_dim = parent
+                        break
+                if drill_up_dim:
+                    break
+                    
+            if drill_up_dim:
+                if st.button(f"⏫ Drill Up Filas (A {parent_dim})", key="btn_drill_up_rows_dlg"):
+                    drill_up_callback(drill_up_dim, parent_dim, "rows")
+                    st.session_state["last_selection"] = {}
+                    st.rerun()
+        else:
+            st.caption("Ninguna fila seleccionada.")
+            
+    with col_panel_cols:
+        st.markdown("##### Acciones sobre Columnas")
+        if selected_col_vals:
+            sel_desc_c = ", ".join([f"**{k}**: {v}" for k, v in selected_col_vals.items()])
+            st.write(f"Columna activa: {sel_desc_c}")
+            
+            drill_dim_c = None
+            for d in reversed(pivot_cols):
+                if d in selected_col_vals and d in HIERARCHIES:
+                    drill_dim_c = d
+                    break
+                    
+            if drill_dim_c:
+                next_dim_c = HIERARCHIES[drill_dim_c]
+                real_val_c = resolve_filter_value(drill_dim_c, selected_col_vals[drill_dim_c])
+                if st.button(f"➡️ Drill Down Columnas (A {next_dim_c})", type="primary", key="btn_drill_down_cols_dlg"):
+                    drill_down_callback(drill_dim_c, real_val_c, next_dim_c, selected_col_vals, "columns")
+                    st.session_state["last_selection"] = {}
+                    st.rerun()
+            else:
+                st.caption("No hay más niveles de columna.")
+                
+            drill_up_dim_c = None
+            for d in pivot_cols:
+                for parent, child in HIERARCHIES.items():
+                    if child == d:
+                        drill_up_dim_c = d
+                        parent_dim_c = parent
+                        break
+                if drill_up_dim_c:
+                    break
+                    
+            if drill_up_dim_c:
+                if st.button(f"⬅️ Drill Up Columnas (A {parent_dim_c})", key="btn_drill_up_cols_dlg"):
+                    drill_up_callback(drill_up_dim_c, parent_dim_c, "columns")
+                    st.session_state["last_selection"] = {}
+                    st.rerun()
+        else:
+            st.caption("Ninguna columna seleccionada.")
+
+
+# Inicialización de estado de la consulta (defaults)
+if "query_counter" not in st.session_state:
+    st.session_state["query_counter"] = 0
+if "sel_metrics" not in st.session_state:
+    st.session_state["sel_metrics"] = ["Facturación ($)", "Unidades Vendidas"]
+if "sel_pages" not in st.session_state:
+    st.session_state["sel_pages"] = []
+if "sel_rows" not in st.session_state:
+    st.session_state["sel_rows"] = ["Región"]
+if "sel_cols" not in st.session_state:
+    st.session_state["sel_cols"] = ["Año"]
+
+# Inicialización de estado de filtros generales
+for f_name in ["Año", "Mes", "Región", "Local", "Vendedor", "Rubro"]:
+    key = f"filter_{f_name}"
+    if key not in st.session_state:
+        st.session_state[key] = []
+
+# Mantener las selecciones disjuntas para evitar errores en multiselects
+for page_val in list(st.session_state["sel_pages"]):
+    if page_val in st.session_state["sel_rows"]:
+        st.session_state["sel_rows"].remove(page_val)
+    if page_val in st.session_state["sel_cols"]:
+        st.session_state["sel_cols"].remove(page_val)
+
+for row_val in list(st.session_state["sel_rows"]):
+    if row_val in st.session_state["sel_cols"]:
+        st.session_state["sel_cols"].remove(row_val)
+
+
+# 1.2. DISPARADORES DE DIÁLOGOS MODALES (Popups Estilo MetaCube)
+# Nota: Ahora los diálogos de configuración de dimensiones se invocan de forma directa en los botones correspondientes.
+
 # Estilo CSS personalizado para darle un toque premium y profesional (Estilo Dark Glassmorphism)
 st.markdown("""
 <style>
@@ -188,23 +433,30 @@ with st.sidebar:
     meses_dict = {d["val"]: d["desc"] for d in get_dimension_values("Mes")}
     regiones_list = [d["val"] for d in get_dimension_values("Región")]
     locales_dict = {d["val"]: d["desc"] for d in get_dimension_values("Local")}
+    vendedores_dict = {d["val"]: d["desc"] for d in get_dimension_values("Vendedor")}
     rubros_list = [d["val"] for d in get_dimension_values("Rubro")]
     
-    filtered_years = st.multiselect("Año Fiscal", options=anios_list, default=[])
+    filtered_years = st.multiselect("Año Fiscal", options=anios_list, key="filter_Año")
     selected_months_codes = st.multiselect(
         "Mes del Año", 
         options=list(meses_dict.keys()), 
         format_func=lambda x: meses_dict[x], 
-        default=[]
+        key="filter_Mes"
     )
-    filtered_regions = st.multiselect("Región Geográfica", options=regiones_list, default=[])
+    filtered_regions = st.multiselect("Región Geográfica", options=regiones_list, key="filter_Región")
     selected_locales_codes = st.multiselect(
         "Local Comercial", 
         options=list(locales_dict.keys()), 
         format_func=lambda x: locales_dict[x], 
-        default=[]
+        key="filter_Local"
     )
-    filtered_rubros = st.multiselect("Rubro Comercial", options=rubros_list, default=[])
+    selected_vendedores_codes = st.multiselect(
+        "Vendedor", 
+        options=list(vendedores_dict.keys()), 
+        format_func=lambda x: vendedores_dict[x], 
+        key="filter_Vendedor"
+    )
+    filtered_rubros = st.multiselect("Rubro Comercial", options=rubros_list, key="filter_Rubro")
 
     # Compilar los filtros de barra lateral activos
     active_filters = {}
@@ -216,6 +468,8 @@ with st.sidebar:
         active_filters["Región"] = filtered_regions
     if selected_locales_codes:
         active_filters["Local"] = selected_locales_codes
+    if selected_vendedores_codes:
+        active_filters["Vendedor"] = selected_vendedores_codes
     if filtered_rubros:
         active_filters["Rubro"] = filtered_rubros
 
@@ -232,7 +486,7 @@ st.markdown("Diseña tu reporte dinámico seleccionando y ubicando medidas y dim
 # 4.1. CONSTRUCTOR DE CONSULTA MAESTRO (Query Definition Area - Metacube Style)
 with st.container(border=True):
     st.subheader("🛠️ Área de Definición de Consulta (Query Definition Area)")
-    st.caption("Organiza los atributos de las dimensiones en filas, columnas o páginas, tal como en la interfaz clásica de Informix MetaCube.")
+    st.caption("Organiza los atributos haciendo clic sobre las dimensiones para elegir si van a Filas, Columnas o Páginas.")
     
     col_box1, col_box2 = st.columns(2)
     
@@ -242,7 +496,7 @@ with st.container(border=True):
         selected_metrics = st.multiselect(
             "📊 Medidas (Measures)",
             options=metric_options,
-            default=["Facturación ($)", "Unidades Vendidas"],
+            key="sel_metrics",
             help="Las columnas numéricas agregadas que deseas calcular en el reporte."
         )
         if not selected_metrics:
@@ -250,35 +504,80 @@ with st.container(border=True):
     
         # Validar las dimensiones que se pueden utilizar para el conjunto de métricas elegido
         available_dims = get_available_dimensions(selected_metrics)
+
+        # --- Filas (debajo de Medidas) ---
+        st.markdown("⬇️ **Filas (Rows):**")
+        rows = st.session_state.get("sel_rows", [])
+        if rows:
+            r_cols = st.columns(min(len(rows), 5))
+            for r_i, r_dim in enumerate(rows):
+                with r_cols[r_i % 5]:
+                    if st.button(f"⬇️ {r_dim}", key=f"cfg_row_{r_dim}", use_container_width=True):
+                        show_dim_config_dialog(r_dim)
+        else:
+            st.caption("Ninguna. Agregá una dimensión abajo.")
+        # Selectbox para agregar dimensiones a Filas
+        all_assigned = set(st.session_state.get("sel_rows", []) + st.session_state.get("sel_cols", []) + st.session_state.get("sel_pages", []))
+        unassigned_rows = [d for d in available_dims if d not in all_assigned]
+        if unassigned_rows:
+            placeholder_r = "➕ Agregar dimensión a Filas..."
+            sel_add_row = st.selectbox(placeholder_r, options=[placeholder_r] + unassigned_rows, key="add_row_dim", label_visibility="collapsed")
+            if sel_add_row != placeholder_r:
+                st.session_state["sel_rows"].append(sel_add_row)
+                st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+                st.rerun()
         
-        # Selector de Páginas (Pages Drop Box)
-        selected_pages = st.multiselect(
-            "📄 Páginas (Page Dimensions)",
-            options=available_dims,
-            default=[],
-            help="Dimensiones que paginarán el reporte completo. Útil para filtrar todo por un valor específico en la cabecera."
-        )
-    
     with col_box2:
-        # Selector de Filas (Rows Drop Box)
-        remaining_for_rows = [d for d in available_dims if d not in selected_pages]
-        row_dimensions = st.multiselect(
-            "⬇️ Filas (Row Dimensions)",
-            options=remaining_for_rows,
-            default=["Región"] if "Región" in remaining_for_rows else [remaining_for_rows[0]],
-            help="Dimensiones que formarán las filas de la tabla. Elige más de una para crear subordinaciones jerárquicas (Break Reports)."
-        )
-        if not row_dimensions:
-            row_dimensions = ["Región"]
-    
-        # Selector de Columnas (Columns Drop Box)
-        remaining_for_cols = [d for d in remaining_for_rows if d not in row_dimensions]
-        col_dimensions = st.multiselect(
-            "➡️ Columnas (Column Dimensions)",
-            options=remaining_for_cols,
-            default=["Año"] if "Año" in remaining_for_cols else [],
-            help="Dimensiones que formarán los encabezados de las columnas."
-        )
+        # --- Columnas ---
+        st.markdown("➡️ **Columnas (Columns):**")
+        cols_sel = st.session_state.get("sel_cols", [])
+        if cols_sel:
+            c_cols = st.columns(min(len(cols_sel), 5))
+            for c_i, c_dim in enumerate(cols_sel):
+                with c_cols[c_i % 5]:
+                    if st.button(f"➡️ {c_dim}", key=f"cfg_col_{c_dim}", use_container_width=True):
+                        show_dim_config_dialog(c_dim)
+        else:
+            st.caption("Ninguna. Agregá una dimensión abajo.")
+        all_assigned_c = set(st.session_state.get("sel_rows", []) + st.session_state.get("sel_cols", []) + st.session_state.get("sel_pages", []))
+        unassigned_cols = [d for d in available_dims if d not in all_assigned_c]
+        if unassigned_cols:
+            placeholder_c = "➕ Agregar dimensión a Columnas..."
+            sel_add_col = st.selectbox(placeholder_c, options=[placeholder_c] + unassigned_cols, key="add_col_dim", label_visibility="collapsed")
+            if sel_add_col != placeholder_c:
+                st.session_state["sel_cols"].append(sel_add_col)
+                st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+                st.rerun()
+
+        # --- Páginas (debajo de Columnas) ---
+        st.markdown("📄 **Páginas (Pages):**")
+        pages_sel = st.session_state.get("sel_pages", [])
+        if pages_sel:
+            p_cols = st.columns(min(len(pages_sel), 5))
+            for p_i, p_dim in enumerate(pages_sel):
+                with p_cols[p_i % 5]:
+                    if st.button(f"📄 {p_dim}", key=f"cfg_page_{p_dim}", use_container_width=True):
+                        show_dim_config_dialog(p_dim)
+        else:
+            st.caption("Ninguna. Agregá una dimensión abajo.")
+        all_assigned_p = set(st.session_state.get("sel_rows", []) + st.session_state.get("sel_cols", []) + st.session_state.get("sel_pages", []))
+        unassigned_pages = [d for d in available_dims if d not in all_assigned_p]
+        if unassigned_pages:
+            placeholder_p = "➕ Agregar dimensión a Páginas..."
+            sel_add_page = st.selectbox(placeholder_p, options=[placeholder_p] + unassigned_pages, key="add_page_dim", label_visibility="collapsed")
+            if sel_add_page != placeholder_p:
+                st.session_state["sel_pages"].append(sel_add_page)
+                st.session_state["query_counter"] = st.session_state.get("query_counter", 0) + 1
+                st.rerun()
+
+    # Mapear a las variables de consulta esperadas
+    selected_pages = st.session_state["sel_pages"]
+    row_dimensions = st.session_state["sel_rows"]
+    col_dimensions = st.session_state["sel_cols"]
+
+    # Vista previa estructural al pie (Example Report)
+    st.markdown("---")
+    render_example_report(row_dimensions, col_dimensions, selected_metrics)
 
 # 4.2. RESOLUCIÓN Y RENDERIZACIÓN DE NAVEGADORES DE PÁGINAS OLAP
 # Renderizar el navegador de páginas OLAP arriba (fuera de las pestañas) y obtener los filtros activos
@@ -382,7 +681,7 @@ with tab_pivot:
             st.error("Errores del motor de base de datos:\n" + "\n".join(query_errors))
     else:
         st.subheader("Matriz ROLAP: Tabla Dinámica")
-        st.caption("Vista del reporte analítico resultante. Incluye subtotales y Totales Generales en filas y columnas.")
+        st.caption("Vista del reporte analítico resultante. Selecciona una celda para habilitar las Acciones OLAP sobre Filas y Columnas.")
         
         pivot_rows = row_dimensions
         pivot_cols = col_dimensions if col_dimensions else None
@@ -392,26 +691,53 @@ with tab_pivot:
         # Filtramos merged_df localmente en base a las páginas por seguridad
         clean_df = merged_df.copy()
         
+        # Aplicar orden categórico a dimensiones que requieren orden por ID (ej: Mes)
+        all_pivot_dims = list(set((pivot_rows or []) + (pivot_cols or [])))
+        for dim_name in all_pivot_dims:
+            dim_info = DIMENSIONS_MAP.get(dim_name, {})
+            if dim_info.get("sort_by_id") and dim_name in clean_df.columns:
+                # Obtener el orden correcto de las descripciones desde la base de datos
+                ordered_vals = [d["desc"] for d in get_dimension_values(dim_name)]
+                # Incluir cualquier valor presente en los datos que no esté en la tabla de dimensiones
+                existing_vals = clean_df[dim_name].unique().tolist()
+                for v in existing_vals:
+                    if v not in ordered_vals:
+                        ordered_vals.append(v)
+                clean_df[dim_name] = pd.Categorical(clean_df[dim_name], categories=ordered_vals, ordered=True)
+        
+        active_pivot_table = None
+        
         try:
-            # Generar la Pivot Table con Totales Generales (margins=True)
-            # Replicando los reportes clásicos de MetaCube
-            pivot_table = pd.pivot_table(
-                clean_df,
-                index=pivot_rows,
-                columns=pivot_cols,
-                values=selected_metrics,
-                aggfunc="sum",
-                fill_value=0,
-                margins=True,
-                margins_name="Total General"
-            )
+            if not pivot_rows and not pivot_cols:
+                # Si no hay dimensiones para pivotar, mostramos los totales generales directamente
+                pivot_table = clean_df
+            else:
+                # Generar la Pivot Table con Totales Generales (margins=True)
+                # Replicando los reportes clásicos de MetaCube
+                pivot_table = pd.pivot_table(
+                    clean_df,
+                    index=pivot_rows,
+                    columns=pivot_cols,
+                    values=selected_metrics,
+                    aggfunc="sum",
+                    fill_value=0,
+                    margins=True,
+                    margins_name="Total General"
+                )
+            active_pivot_table = pivot_table
             
             # Formatear visualmente los números de la Pivot Table en Streamlit
             # Si hay valores flotantes, les damos formato de dos decimales
             styled_pivot = pivot_table.style.format(lambda x: f"${x:,.2f}" if isinstance(x, float) and x > 1000 else f"{x:,}" if isinstance(x, (int, float)) else str(x))
             
-            # Mostrar la tabla formateada y estilizada de manera premium con soporte completo de scroll
-            st.dataframe(styled_pivot, use_container_width=True)
+            # Mostrar la tabla formateada y estilizada de manera premium con soporte completo de scroll y selección de celda (fila y columna)
+            st.dataframe(
+                styled_pivot, 
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode=["single-row", "single-column"],
+                key=f"pivot_selection_{st.session_state.get('query_counter', 0)}"
+            )
             
             # Nota explicativa si hay dimensiones de producto cruzadas con finanzas
             if any_financial and any_product_only:
@@ -430,15 +756,26 @@ with tab_pivot:
             # En raras combinaciones (ej. vacíos absolutos), margins de pandas puede fallar.
             # En ese caso, mostramos la tabla sin totales de margen para asegurar robustez absoluta.
             try:
-                pivot_table_fallback = pd.pivot_table(
-                    clean_df,
-                    index=pivot_rows,
-                    columns=pivot_cols,
-                    values=selected_metrics,
-                    aggfunc="sum",
-                    fill_value=0
+                if not pivot_rows and not pivot_cols:
+                    pivot_table_fallback = clean_df
+                else:
+                    pivot_table_fallback = pd.pivot_table(
+                        clean_df,
+                        index=pivot_rows,
+                        columns=pivot_cols,
+                        values=selected_metrics,
+                        aggfunc="sum",
+                        fill_value=0
+                    )
+                active_pivot_table = pivot_table_fallback
+                
+                st.dataframe(
+                    pivot_table_fallback, 
+                    use_container_width=True,
+                    on_select="rerun",
+                    selection_mode=["single-row", "single-column"],
+                    key=f"pivot_selection_fallback_{st.session_state.get('query_counter', 0)}"
                 )
-                st.dataframe(pivot_table_fallback, use_container_width=True)
                 
                 st.markdown("---")
                 csv_data = pivot_table_fallback.to_csv().encode('utf-8')
@@ -451,6 +788,61 @@ with tab_pivot:
             except Exception as e_inner:
                 st.error(f"Error al estructurar la tabla pivot: {e_inner}")
                 st.info("Sugerencia: Intenta cambiar de caja los atributos en las filas y columnas.")
+
+        # Lógica de Drill Down / Drill Up (Acciones de Celda OLAP en Filas y Columnas)
+        selected_row_vals = {}
+        selected_col_vals = {}
+        
+        q_counter = st.session_state.get("query_counter", 0)
+        sel_key_main = f"pivot_selection_{q_counter}"
+        sel_key_fallback = f"pivot_selection_fallback_{q_counter}"
+        
+        sel_key = None
+        if sel_key_main in st.session_state:
+            sel_key = sel_key_main
+        elif sel_key_fallback in st.session_state:
+            sel_key = sel_key_fallback
+            
+        if sel_key is not None and active_pivot_table is not None:
+            sel = st.session_state[sel_key]
+            
+            # 1. Analizar filas seleccionadas
+            rows = sel.get("selection", {}).get("rows", [])
+            if rows and pivot_rows:
+                r = rows[0]
+                if r < len(active_pivot_table.index):
+                    row_label = active_pivot_table.index[r]
+                    # Descartar si es Total General o fila vacía
+                    if row_label != "Total General" and not (isinstance(row_label, tuple) and "Total General" in row_label):
+                        if isinstance(row_label, tuple):
+                            for dim, val in zip(pivot_rows, row_label):
+                                if val and val != "Total General":
+                                    selected_row_vals[dim] = val
+                        else:
+                            dim = pivot_rows[0]
+                            if row_label and row_label != "Total General":
+                                selected_row_vals[dim] = row_label
+                                
+            # 2. Analizar columnas seleccionadas
+            cols = sel.get("selection", {}).get("columns", [])
+            if cols and pivot_cols:
+                col_name_str = str(cols[0])
+                for col_dim in pivot_cols:
+                    desc, val = extract_dimension_value_from_column_string(col_dim, col_name_str)
+                    if val is not None:
+                        selected_col_vals[col_dim] = val
+
+            # Check selection and trigger popup
+            current_sel = sel.get("selection", {})
+            last_sel = st.session_state.get("last_selection", {})
+            has_selection = bool(current_sel.get("rows") or current_sel.get("columns"))
+            selection_changed = current_sel != last_sel
+            
+            if (selected_row_vals or selected_col_vals) and selection_changed:
+                st.session_state["last_selection"] = current_sel
+                show_olap_actions_dialog(selected_row_vals, selected_col_vals, pivot_rows, pivot_cols)
+            elif not has_selection:
+                st.session_state["last_selection"] = {}
 
 # --- TAB 2: GRAFICO DINAMICO ---
 with tab_visual:
