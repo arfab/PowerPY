@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  powerpy:
+    build: .
+    image: powerpy-app:latest
+    container_name: powerpy-container
+    ports:
+      - "8501:8501"
+    environment:
+      # Las variables se leen dinámicamente desde el archivo local .env en el directorio
+      - DB_TYPE=${DB_TYPE:-sqlserver}
+      - DB_SERVER=${DB_SERVER}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_TRUSTED_CONNECTION=${DB_TRUSTED_CONNECTION:-no}
+      - DB_DRIVER=${DB_DRIVER:-ODBC Driver 17 for SQL Server}
+      - DB_PORT=${DB_PORT:-1433}
+    restart: unless-stopped

@@ -11,16 +11,36 @@ def load_config():
     """
     Carga la configuracion de base de datos desde config.json.
     Si no existe, retorna un diccionario vacio.
+    Posteriormente, sobreescribe con variables de entorno (DB_SERVER, etc.) si estan presentes.
     """
+    config = {}
     path = get_config_path()
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                config = json.load(f)
         except Exception as e:
             print(f"Error al leer config.json: {e}")
-            return {}
-    return {}
+            config = {}
+            
+    # Sobreescribir con variables de entorno (Opción A)
+    env_mapping = {
+        "DB_TYPE": "DB_TYPE",
+        "SERVER": "DB_SERVER",
+        "DATABASE": "DB_DATABASE",
+        "USERNAME": "DB_USERNAME",
+        "PASSWORD": "DB_PASSWORD",
+        "TRUSTED_CONNECTION": "DB_TRUSTED_CONNECTION",
+        "DRIVER": "DB_DRIVER",
+        "PORT": "DB_PORT"
+    }
+    
+    for key, env_var in env_mapping.items():
+        val = os.environ.get(env_var)
+        if val is not None:
+            config[key] = val
+            
+    return config
 
 def save_config(config_data):
     """
